@@ -1,3 +1,4 @@
+import sv_ttk
 from gui import SPADEApp
 import pandas as pd
 import matplotlib.pyplot as plt
