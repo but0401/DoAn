@@ -5,6 +5,7 @@ from datetime import datetime
 from PIL import Image, ImageTk
 import os
 import sv_ttk  # Thư viện theme hiện đại cho tkinter
+from tkcalendar import DateEntry  # Add this import for date picker
 
 from data_processing import load_and_process_data
 from spade_algorithm import SPADEAlgorithm
@@ -15,8 +16,8 @@ class SPADEApp(tk.Tk):
     def __init__(self):
         super().__init__()
         
-        self.title("SPADE Sequential Pattern Mining")
-        self.geometry("1280x800")
+        self.title("SPADE Data Mining Application")
+        self.geometry("800x600")
         self.minsize(1024, 700)
         
         # Áp dụng theme Sun Valley
@@ -34,6 +35,7 @@ class SPADEApp(tk.Tk):
         self.data = None
         self.cleaned_data = None
         self.spade = None
+        self.standard_products = None
         
         # Thiết lập icon cho phần cửa sổ (nếu có)
         # try:
@@ -41,7 +43,19 @@ class SPADEApp(tk.Tk):
         # except:
         #     pass
             
+        # Tạo notebook (tabbed interface)
+        self.notebook = ttk.Notebook(self)
+        self.notebook.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Thêm các tab hiện có
         self.create_widgets()
+        
+        # Thêm tab nhập dữ liệu mới
+        self.data_entry_frame = ttk.Frame(self.notebook)
+        self.notebook.add(self.data_entry_frame, text="Import Data")
+        
+        # Thiết lập giao diện nhập dữ liệu
+        self.setup_data_entry_ui()
     
     def create_widgets(self):
         # Create main frame with padding
@@ -93,7 +107,6 @@ class SPADEApp(tk.Tk):
         ttk.Button(button_frame, text="Generate Statistics", command=self.generate_statistics, style="TButton").pack(fill=tk.X)
         
         # Create modern styled notebook for different tabs
-        self.notebook = ttk.Notebook(main_frame)
         self.notebook.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
         
         # Data tab
@@ -122,6 +135,330 @@ class SPADEApp(tk.Tk):
         
         self.status_var = tk.StringVar(value="Ready")
         ttk.Label(status_frame, textvariable=self.status_var, anchor=tk.W, padding=(10, 5)).pack(side=tk.LEFT, fill=tk.X, expand=True)
+    
+    def load_standard_products(self):
+        """Load standard products from data.csv"""
+        product_data_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "data.csv")
+        try:
+            self.standard_products = pd.read_csv(product_data_path)
+            return True
+        except Exception as e:
+            print(f"Warning: Could not load standard products: {e}")
+            self.standard_products = None
+            return False
+
+    def setup_data_entry_ui(self):
+        # Frame containing the data entry form
+        entry_frame = ttk.LabelFrame(self.data_entry_frame, text="New Order Information")
+        entry_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Load standard products
+        have_standards = self.load_standard_products()
+        
+        # Create input fields
+        self.entries = {}
+        
+        # Generate auto-incrementing invoice number
+        next_invoice_no = self.get_next_invoice_number()
+        
+        # Modified field list
+        fields = [
+            ("InvoiceNo", "Invoice Number (auto):"), 
+            ("Description", "Product Description:"), 
+            ("StockCode", "Product Code:"), 
+            ("Quantity", "Quantity:"), 
+            ("InvoiceDate", "Date and Time:"),
+            ("UnitPrice", "Unit Price:"), 
+            ("CustomerID", "Customer ID:"), 
+            ("Country", "Country:")
+        ]
+        
+        # Create labels and entry fields
+        for i, (field, label) in enumerate(fields):
+            ttk.Label(entry_frame, text=label).grid(row=i, column=0, sticky=tk.W, padx=5, pady=5)
+            
+            # Special handling for InvoiceNo (auto-generated, read-only)
+            if field == "InvoiceNo":
+                self.entries[field] = ttk.Entry(entry_frame, width=50)
+                self.entries[field].insert(0, str(next_invoice_no))
+                self.entries[field].configure(state="readonly")
+                self.entries[field].grid(row=i, column=1, padx=5, pady=5)
+                
+            # Special handling for Description (dropdown + entry)
+            elif field == "Description" and have_standards:
+                desc_frame = ttk.Frame(entry_frame)
+                desc_frame.grid(row=i, column=1, sticky=tk.W, padx=5, pady=5)
+                
+                self.description_var = tk.StringVar()
+                
+                # Create combo box with standard descriptions
+                descriptions = self.standard_products['Description'].tolist()
+                
+                desc_combo = ttk.Combobox(desc_frame, textvariable=self.description_var, width=47)
+                desc_combo['values'] = descriptions
+                desc_combo.pack(side=tk.LEFT)
+                
+                # Bind selection event to update StockCode and UnitPrice
+                desc_combo.bind("<<ComboboxSelected>>", self.update_product_info)
+                
+                # Enable type-ahead search in dropdown
+                def handle_keypress(event):
+                    if event.widget == desc_combo:
+                        if event.char.isalnum():
+                            typed = event.char.upper()
+                            for idx, item in enumerate(descriptions):
+                                if str(item).upper().startswith(typed):
+                                    desc_combo.current(idx)
+                                    break
+
+                desc_combo.bind('<KeyPress>', handle_keypress)
+                
+                # Store the combobox in entries dict
+                self.entries[field] = desc_combo
+                    
+            # Special handling for StockCode (may be auto-populated)
+            elif field == "StockCode" and have_standards:
+                self.entries[field] = ttk.Entry(entry_frame, width=50)
+                self.entries[field].grid(row=i, column=1, padx=5, pady=5)
+                
+            # Special handling for UnitPrice (may be auto-populated)
+            elif field == "UnitPrice" and have_standards:
+                self.entries[field] = ttk.Entry(entry_frame, width=50)
+                self.entries[field].grid(row=i, column=1, padx=5, pady=5)
+                
+            # Special handling for InvoiceDate (date picker)
+            elif field == "InvoiceDate":
+                # Create a frame to hold date and time components
+                date_frame = ttk.Frame(entry_frame)
+                date_frame.grid(row=i, column=1, sticky=tk.W, padx=5, pady=5)
+                
+                # Add date picker
+                self.date_picker = DateEntry(
+                    date_frame, 
+                    width=12, 
+                    background=self.color_highlight,
+                    foreground='white', 
+                    borderwidth=2, 
+                    date_pattern='yyyy-mm-dd'
+                )
+                self.date_picker.pack(side=tk.LEFT, padx=(0, 10))
+                
+                # Add time entry (hours and minutes)
+                time_frame = ttk.Frame(date_frame)
+                time_frame.pack(side=tk.LEFT)
+                
+                ttk.Label(time_frame, text="Time:").pack(side=tk.LEFT, padx=(0, 5))
+                
+                # Hours combobox
+                self.hour_var = tk.StringVar()
+                hour_combo = ttk.Combobox(time_frame, textvariable=self.hour_var, width=2)
+                hour_combo['values'] = [f"{i:02d}" for i in range(24)]  # 00-23 hours
+                hour_combo.pack(side=tk.LEFT)
+                hour_combo.set(datetime.now().strftime("%H"))
+                
+                ttk.Label(time_frame, text=":").pack(side=tk.LEFT)
+                
+                # Minutes combobox
+                self.minute_var = tk.StringVar()
+                minute_combo = ttk.Combobox(time_frame, textvariable=self.minute_var, width=2)
+                minute_combo['values'] = [f"{i:02d}" for i in range(0, 60, 5)]  # 00-55 minutes (5 min increments)
+                minute_combo.pack(side=tk.LEFT)
+                minute_combo.set(datetime.now().strftime("%M"))
+                
+                # Create a hidden entry to store the formatted date+time
+                self.entries[field] = ttk.Entry(entry_frame)
+                
+            else:
+                # Standard entry fields for other inputs
+                self.entries[field] = ttk.Entry(entry_frame, width=50)
+                self.entries[field].grid(row=i, column=1, padx=5, pady=5)
+            
+        # Preset country field
+        self.entries["Country"].insert(0, "Vietnam")
+        
+        # Save data button
+        save_button = ttk.Button(entry_frame, text="Save Data", command=self.save_data)
+        save_button.grid(row=len(fields), column=1, sticky=tk.E, padx=5, pady=10)
+        
+        # Clear form button
+        clear_button = ttk.Button(entry_frame, text="Clear Form", command=self.clear_form)
+        clear_button.grid(row=len(fields), column=0, sticky=tk.W, padx=5, pady=10)
+
+    def update_product_info(self, event):
+        """Auto-populate product details when a Description is selected"""
+        if not hasattr(self, 'standard_products') or self.standard_products is None:
+            return
+            
+        selected_description = self.description_var.get()
+        
+        # Find the product in the standard list
+        product = self.standard_products[self.standard_products['Description'] == selected_description]
+        
+        if len(product) > 0:
+            # Update StockCode
+            self.entries["StockCode"].delete(0, tk.END)
+            self.entries["StockCode"].insert(0, product["StockCode"].iloc[0])
+            
+            # Update UnitPrice
+            self.entries["UnitPrice"].delete(0, tk.END)
+            self.entries["UnitPrice"].insert(0, str(product["UnitPrice"].iloc[0]))
+            
+            # Provide visual feedback that fields were auto-populated
+            self.entries["StockCode"].config(foreground="blue")
+            self.entries["UnitPrice"].config(foreground="blue")
+            
+            # Schedule reset of text color after a short delay
+            self.after(1500, self.reset_field_colors)
+
+    def reset_field_colors(self):
+        """Reset text colors back to default after visual feedback"""
+        if "StockCode" in self.entries:
+            self.entries["StockCode"].config(foreground="")
+        if "UnitPrice" in self.entries:
+            self.entries["UnitPrice"].config(foreground="")
+
+    def get_next_invoice_number(self):
+        """Generate the next invoice number based on existing data"""
+        try:
+            # Path to CSV file
+            csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sample_data.csv")
+            
+            # Check if file exists
+            if not os.path.exists(csv_path):
+                return 100001  # Starting invoice number if file doesn't exist
+            
+            # Read existing CSV file
+            df = pd.read_csv(csv_path)
+            
+            # If there are no invoice numbers or column doesn't exist
+            if 'InvoiceNo' not in df.columns or len(df) == 0:
+                return 100001
+                
+            # Get the highest invoice number (excluding those starting with 'C' for cancellations)
+            numeric_invoices = df[~df['InvoiceNo'].astype(str).str.startswith('C')]['InvoiceNo']
+            
+            if len(numeric_invoices) == 0:
+                return 100001
+                
+            # Convert to integers where possible and find max
+            try:
+                max_invoice = max(int(inv) for inv in numeric_invoices if str(inv).isdigit())
+                return max_invoice + 1
+            except:
+                # If there's an error (e.g., non-numeric invoice numbers), start from a default
+                return 100001
+                
+        except Exception as e:
+            print(f"Error generating invoice number: {str(e)}")
+            return 100001  # Default in case of error
+
+    def validate_data(self):
+        """Validate the entered data"""
+        try:
+            # Format the date+time value before validation
+            if hasattr(self, 'date_picker'):
+                selected_date = self.date_picker.get_date()
+                hour = self.hour_var.get()
+                minute = self.minute_var.get()
+                
+                # Format as "YYYY-MM-DD HH:MM"
+                formatted_datetime = f"{selected_date.strftime('%Y-%m-%d')} {hour}:{minute}"
+                
+                # Update the hidden InvoiceDate entry with the formatted value
+                self.entries["InvoiceDate"].delete(0, tk.END)
+                self.entries["InvoiceDate"].insert(0, formatted_datetime)
+            
+            # Check quantity if it's not empty
+            if self.entries["Quantity"].get().strip():
+                try:
+                    quantity = int(self.entries["Quantity"].get())
+                    if quantity <= 0:
+                        messagebox.showerror("Error", "Quantity must be a positive integer")
+                        return False
+                except ValueError:
+                    messagebox.showerror("Error", "Quantity must be an integer")
+                    return False
+                    
+            # Check unit price if it's not empty
+            if self.entries["UnitPrice"].get().strip():
+                try:
+                    unit_price = float(self.entries["UnitPrice"].get())
+                    if unit_price <= 0:
+                        messagebox.showerror("Error", "Unit price must be greater than 0")
+                        return False
+                except ValueError:
+                    messagebox.showerror("Error", "Unit price must be a number")
+                    return False
+            
+            # Date format is already validated by the date picker
+            return True
+        except Exception as e:
+            messagebox.showerror("Error", f"Error validating data: {str(e)}")
+            return False
+
+    def save_data(self):
+        """Save data to CSV file"""
+        if not self.validate_data():
+            return
+            
+        try:
+            # Path to CSV file
+            csv_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "sample_data.csv")
+            
+            # Prepare data for writing to file
+            new_data = {field: entry.get() for field, entry in self.entries.items()}
+            
+            # Read existing CSV file
+            try:
+                df = pd.read_csv(csv_path)
+            except FileNotFoundError:
+                # Create new DataFrame if file doesn't exist
+                df = pd.DataFrame(columns=list(self.entries.keys()))
+            
+            # Add new data to DataFrame
+            df = pd.concat([df, pd.DataFrame([new_data])], ignore_index=True)
+            
+            # Save DataFrame to CSV file
+            df.to_csv(csv_path, index=False)
+            
+            messagebox.showinfo("Success", "Data saved successfully!")
+            
+            # Clear form and generate next invoice number
+            self.clear_form()
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not save data: {str(e)}")
+
+    def clear_form(self):
+        """Clear data in the form and reset to defaults"""
+        # Generate new invoice number for next entry
+        next_invoice_no = self.get_next_invoice_number()
+        
+        # Reset invoice number field
+        self.entries["InvoiceNo"].configure(state="normal")
+        self.entries["InvoiceNo"].delete(0, tk.END)
+        self.entries["InvoiceNo"].insert(0, str(next_invoice_no))
+        self.entries["InvoiceNo"].configure(state="readonly")
+        
+        # Clear other fields
+        for field, entry in self.entries.items():
+            if field != "InvoiceNo":  # Skip invoice number as it's already handled
+                entry.delete(0, tk.END)
+        
+        # Reset date picker to current date
+        if hasattr(self, 'date_picker'):
+            today = datetime.now().date()
+            self.date_picker.set_date(today)
+            
+            # Reset time to current time
+            current_time = datetime.now()
+            self.hour_var.set(current_time.strftime("%H"))
+            self.minute_var.set(current_time.strftime("%M"))
+        
+        # Reset default value for Country
+        self.entries["Country"].insert(0, "Vietnam")
+        
+        # Reset text colors
+        self.reset_field_colors()
     
     def browse_file(self):
         filename = filedialog.askopenfilename(
