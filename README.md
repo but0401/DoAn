@@ -28,7 +28,7 @@ Các chức năng chính bao gồm:
 
 1. Clone hoặc tải về mã nguồn:
 
-git clone https://github.com/but0401/ThuatToanSpade.git
+git clone https://github.com/but0401/ThuatToanSpade-Nhom9.git
 
 
 
