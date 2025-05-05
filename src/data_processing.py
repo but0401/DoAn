@@ -39,14 +39,10 @@ def clean_data(df):
         cleaned_df['InvoiceDate'] = pd.to_datetime(cleaned_df['InvoiceDate'], errors='coerce')
         cleaned_df = cleaned_df.dropna(subset=['InvoiceDate'])
     
-    # Remove cancelled invoices (those starting with 'C')
-    if 'InvoiceNo' in cleaned_df.columns:
-        cleaned_df = cleaned_df[~cleaned_df['InvoiceNo'].astype(str).str.startswith('C')]
-    
     # Remove rows with negative or zero quantities
     if 'Quantity' in cleaned_df.columns:
         cleaned_df = cleaned_df[cleaned_df['Quantity'] > 0]
-    
+        
     # Remove rows with negative or zero prices
     if 'UnitPrice' in cleaned_df.columns:
         cleaned_df = cleaned_df[cleaned_df['UnitPrice'] > 0]
