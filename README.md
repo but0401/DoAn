@@ -28,8 +28,8 @@ Các chức năng chính bao gồm:
 
 1. Clone hoặc tải về mã nguồn:
 
-git clone https://github.com/your-repo/spade-mining-app.git
-cd spade-mining-app
+git clone https://github.com/but0401/DoAn.git
+
 
 
 2. Cài đặt các thư viện cần thiết:
